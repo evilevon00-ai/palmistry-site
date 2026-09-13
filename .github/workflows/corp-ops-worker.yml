@@ -1,0 +1,118 @@
+name: Corp Ops bounded Palmistry worker
+run-name: 'corp-ops:${{ inputs.identity_hash }}'
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id:
+        required: true
+        type: string
+      work_item_id:
+        required: true
+        type: string
+      attempt_id:
+        required: true
+        type: string
+      ownership_generation:
+        required: true
+        type: string
+      branch:
+        required: true
+        type: string
+      task_json:
+        required: true
+        type: string
+      identity_hash:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: corp-ops-palmistry-${{ inputs.attempt_id }}
+  cancel-in-progress: false
+env:
+  CORP_OPS_INPUTS: ${{ toJSON(inputs) }}
+jobs:
+  worker:
+    if: ${{ vars.CORP_OPS_RECEIVER_ENABLED == 'true' && github.run_attempt == 1 }}
+    runs-on: [self-hosted, Windows, X64, corp-ops-palmistry-worker]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate and acknowledge exact attempt
+        shell: cmd
+        run: node control\scripts\corp-ops-worker.mjs CLAIMED
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-CLAIMED
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/receipt.json
+          retention-days: 7
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(inputs.task_json).base_sha }}
+          path: task
+          persist-credentials: false
+      - name: Record bounded execution start
+        shell: cmd
+        run: node control\scripts\corp-ops-worker.mjs RUNNING
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-RUNNING
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/receipt.json
+          retention-days: 7
+      - name: Produce and validate bounded patch
+        shell: cmd
+        env:
+          CORP_OPS_CODEX_CLI: ${{ vars.CORP_OPS_CODEX_CLI }}
+          CORP_OPS_TOOL_ROOT: ${{ vars.CORP_OPS_TOOL_ROOT }}
+        run: node control\scripts\corp-ops-worker.mjs code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-patch
+          path: |
+            ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/worker.patch
+            ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/contract.json
+          retention-days: 7
+  publish-attempt-pr:
+    needs: worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: corp-ops-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-patch
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(inputs.task_json).base_sha }}
+          path: task
+          token: ${{ secrets.CORP_OPS_WORKER_TOKEN }}
+      - name: Prepare exact branch and PR intent
+        run: node control/scripts/corp-ops-worker.mjs prepare-publication
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-EFFECT_INTENT
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/receipt.json
+          retention-days: 7
+      - name: Publish exact attempt branch and draft PR once
+        env:
+          CORP_OPS_WORKER_TOKEN: ${{ secrets.CORP_OPS_WORKER_TOKEN }}
+        run: node control/scripts/corp-ops-worker.mjs publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-EVIDENCE_SUBMITTED
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/receipt.json
+          retention-days: 7
