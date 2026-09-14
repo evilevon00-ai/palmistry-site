@@ -42,3 +42,6 @@ jobs:
 
       - name: Run Relay merge-gate invariant self-test
         run: npm run relay:merge-gate:selftest
+
+      - name: Run Corp Ops bounded-worker diagnostic self-test
+        run: node scripts/corp-ops-worker-selftest.mjs
