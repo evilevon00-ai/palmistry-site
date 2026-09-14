@@ -71,6 +71,17 @@ jobs:
           CORP_OPS_CODEX_CLI: ${{ vars.CORP_OPS_CODEX_CLI }}
           CORP_OPS_TOOL_ROOT: ${{ vars.CORP_OPS_TOOL_ROOT }}
         run: node control\scripts\corp-ops-worker.mjs code
+      # corp-ops#118: runner cleanup destroys ${{ runner.temp }}, so the bounded sanitized diagnostic
+      # has to leave the runner here or the failure reason is lost for good. This step only uploads
+      # evidence; it does not alter the job's failed conclusion, so publication stays fail-closed.
+      - name: Preserve bounded failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corp-ops-${{ inputs.attempt_id }}-diagnostic
+          path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/diagnostic.json
+          retention-days: 30
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: corp-ops-${{ inputs.attempt_id }}-patch
