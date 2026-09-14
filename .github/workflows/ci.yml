@@ -45,3 +45,6 @@ jobs:
 
       - name: Run Corp Ops bounded-worker diagnostic self-test
         run: node scripts/corp-ops-worker-selftest.mjs
+
+      - name: Run Corp Ops git-apply diagnostic self-test
+        run: node scripts/corp-ops-git-diagnostics-selftest.mjs
