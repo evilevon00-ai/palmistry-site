@@ -21,7 +21,7 @@ import {
 } from './corp-ops-worker.mjs';
 import {
 	buildDiagnostic, describeSpawnResult, classifyFailure, prepareStream, boundedTail, sanitize,
-	sensitiveSegments, MAX_STDERR_BYTES, MAX_STDOUT_BYTES, MAX_DIAGNOSTIC_BYTES,
+	sensitiveSegments, normalizeCommitSha, MAX_STDERR_BYTES, MAX_STDOUT_BYTES, MAX_DIAGNOSTIC_BYTES,
 } from './lib/corp-ops-diagnostics.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,10 @@ const WORKER_WORKFLOW = resolve(repoRoot, '.github/workflows/corp-ops-worker.yml
 const ENV_SECRET = 'palmistry-selftest-literal-credential-8842';
 const PATTERN_SECRET = `ghp_${'A'.repeat(36)}`;
 const OBJECTIVE_SECRET = 'OBJECTIVE-BODY-MUST-NOT-BE-PERSISTED-7731';
+
+// The workflow/run revision. Deliberately NOT any task repo's base_sha, so every assertion about
+// revision identity distinguishes the two rather than passing on a coincidence.
+const WORKFLOW_SHA = 'b'.repeat(40);
 
 /** Workflow text with line endings normalized, so checks assert structure rather than checkout style. */
 function readWorkflow() {
@@ -130,7 +134,7 @@ function fakeSpawn(fakeEnv) {
 }
 
 /** Drive one complete implementation stage exactly as `main()` does, including the failure guard. */
-function runStage(fakeEnv, { task, cwd } = {}) {
+function runStage(fakeEnv, { task, cwd, githubSha = WORKFLOW_SHA } = {}) {
 	const repo = cwd ? null : makeTaskRepo();
 	const taskCwd = cwd ?? repo.cwd;
 	const resolvedTask = task ?? makeTask(repo.baseSha);
@@ -143,12 +147,15 @@ function runStage(fakeEnv, { task, cwd } = {}) {
 		secret: process.env.CORP_OPS_SELFTEST_TOKEN,
 		runId: process.env.GITHUB_RUN_ID,
 		runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+		sha: process.env.GITHUB_SHA,
 	};
 	process.env.CORP_OPS_CODEX_CLI = approvedCliPath(toolRoot);
 	process.env.CORP_OPS_TOOL_ROOT = toolRoot;
 	process.env.CORP_OPS_SELFTEST_TOKEN = ENV_SECRET;
 	process.env.GITHUB_RUN_ID = '34802164793';
 	process.env.GITHUB_RUN_ATTEMPT = '1';
+	// `null` means "GITHUB_SHA is absent", which must fail closed rather than fall back to base_sha.
+	if (githubSha === null) delete process.env.GITHUB_SHA; else process.env.GITHUB_SHA = githubSha;
 
 	const attempt = newAttemptObservation();
 	let error = null;
@@ -161,7 +168,7 @@ function runStage(fakeEnv, { task, cwd } = {}) {
 		for (const [key, value] of Object.entries({
 			CORP_OPS_CODEX_CLI: previous.cli, CORP_OPS_TOOL_ROOT: previous.root,
 			CORP_OPS_SELFTEST_TOKEN: previous.secret, GITHUB_RUN_ID: previous.runId,
-			GITHUB_RUN_ATTEMPT: previous.runAttempt,
+			GITHUB_RUN_ATTEMPT: previous.runAttempt, GITHUB_SHA: previous.sha,
 		})) {
 			if (value === undefined) delete process.env[key]; else process.env[key] = value;
 		}
@@ -449,10 +456,70 @@ check('failure/retains-exact-identity', () => {
 	assert(run.run_id === '34802164793', 'run_id must be preserved');
 	assert(run.run_attempt === 1, 'run_attempt must be preserved');
 	assert(run.receiver_id === 'palmistry-path:34802164793', 'receiver_id must be preserved');
-	assert(/^[a-f0-9]{40}$/.test(revision.route_revision ?? ''), 'route/base revision must be preserved');
-	assert(revision.route_revision === revision.base_sha, 'route revision must match the dispatched base revision');
+	assert(/^[a-f0-9]{40}$/.test(revision.base_sha ?? ''), 'the intake base revision must be preserved');
+	assert(revision.workflow_sha === WORKFLOW_SHA, 'the workflow/run revision must be preserved');
 	assert(revision.target_branch === 'main', 'target branch must be preserved');
 	assert(nonzero.diagnostic.repository === 'evilevon00-ai/palmistry-site', 'repository identity must be preserved');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Execution-identity separation: intake base_sha is NOT route/workflow revision authority.
+// ---------------------------------------------------------------------------------------------
+check('failure/base-sha-and-workflow-sha-stay-distinct', () => {
+	// A = the intake's declared execution base; B = the revision GitHub ran the workflow from.
+	// They were equal on run 34802164793, which is exactly why that must never be assumed.
+	const repo = makeTaskRepo();
+	const A = repo.baseSha;
+	const B = WORKFLOW_SHA;
+	assert(A !== B, 'the regression is meaningless unless the two revisions actually differ');
+
+	const result = runStage(
+		{ FAKE_CODEX_EXIT: '5', FAKE_CODEX_STDERR: 'codex: failed\n' },
+		{ task: makeTask(A), cwd: repo.cwd, githubSha: B },
+	);
+	assert(result.diagnosticExists, 'the failure must produce a diagnostic');
+	const { revision } = result.diagnostic;
+	assert(revision.base_sha === A, `base_sha must be the intake base A, got ${revision.base_sha}`);
+	assert(revision.workflow_sha === B, `workflow_sha must be the workflow/run revision B, got ${revision.workflow_sha}`);
+	assert(revision.workflow_sha !== revision.base_sha, 'workflow_sha must not collapse onto base_sha');
+
+	// No field anywhere may claim route-revision authority, and A must never be presented as one.
+	assert(!('route_revision' in revision), 'the diagnostic must not carry a route_revision field');
+	assert(!result.diagnosticRaw.includes('route_revision'), 'route_revision must not appear anywhere in the artifact');
+	const identityFields = JSON.stringify({ ...result.diagnostic, revision: undefined });
+	assert(!identityFields.includes(A), 'the intake base revision must appear only as base_sha');
+});
+
+check('failure/workflow-sha-fails-closed-to-null', () => {
+	const repo = makeTaskRepo();
+	const A = repo.baseSha;
+	// Missing, empty, short, long, non-hex, and a ref name must all yield null — never a fallback to A.
+	for (const [label, githubSha] of [
+		['missing', null],
+		['empty', ''],
+		['39 hex', 'a'.repeat(39)],
+		['41 hex', 'a'.repeat(41)],
+		['non-hex', 'z'.repeat(40)],
+		['ref name', 'HEAD'],
+		['short sha', 'b0a1c2d'],
+	]) {
+		const result = runStage(
+			{ FAKE_CODEX_EXIT: '5', FAKE_CODEX_STDERR: 'codex: failed\n' },
+			{ task: makeTask(A), cwd: repo.cwd, githubSha },
+		);
+		const { revision } = result.diagnostic;
+		assert(revision.workflow_sha === null, `${label} GITHUB_SHA must record null, got ${revision.workflow_sha}`);
+		assert(revision.workflow_sha !== A, `${label} GITHUB_SHA must not fall back to the intake base revision`);
+		assert(revision.base_sha === A, `${label} case must still preserve the intake base revision`);
+	}
+	// An uppercase 40-hex SHA is a real revision, just unnormalized: accept it, lowercased.
+	const upper = runStage(
+		{ FAKE_CODEX_EXIT: '5', FAKE_CODEX_STDERR: 'codex: failed\n' },
+		{ task: makeTask(A), cwd: repo.cwd, githubSha: 'B'.repeat(40) },
+	);
+	assert(upper.diagnostic.revision.workflow_sha === 'b'.repeat(40), 'an uppercase SHA must be normalized, not discarded');
+	assert(normalizeCommitSha(' ' + WORKFLOW_SHA + ' ') === WORKFLOW_SHA, 'surrounding whitespace must be trimmed');
+	assert(normalizeCommitSha(undefined) === null && normalizeCommitSha(42) === null, 'non-string input must be null');
 });
 
 // ---------------------------------------------------------------------------------------------

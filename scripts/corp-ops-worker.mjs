@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'no
 import { resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildDiagnostic, describeSpawnResult, sensitiveSegments, SECRET_ENV_KEY, MAX_CAPTURE_BYTES } from './lib/corp-ops-diagnostics.mjs';
+import { buildDiagnostic, describeSpawnResult, sensitiveSegments, normalizeCommitSha, SECRET_ENV_KEY, MAX_CAPTURE_BYTES } from './lib/corp-ops-diagnostics.mjs';
 
 export const repository='evilevon00-ai/palmistry-site';
 export const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -59,7 +59,11 @@ export function writeFailureDiagnostic({stage,identity,task,output,attempt,error
       stage,repository,identity,
       run:{run_id:process.env.GITHUB_RUN_ID??null,run_attempt:Number(process.env.GITHUB_RUN_ATTEMPT)||null,
         receiver_id:process.env.GITHUB_RUN_ID?`palmistry-path:${process.env.GITHUB_RUN_ID}`:null},
-      revision:{route_revision:task?.base_sha??null,base_sha:task?.base_sha??null,target_branch:task?.target_branch??null},
+      // `base_sha` is intake authority; `workflow_sha` is the revision GitHub ran this workflow from,
+      // read only from GITHUB_SHA and validated independently. Never cross-populate them, and never
+      // emit a `route_revision` here — that value is attempt-owned Corp Ops journal state, correlated
+      // to this artifact by attempt_id + run_id.
+      revision:{base_sha:task?.base_sha??null,workflow_sha:normalizeCommitSha(process.env.GITHUB_SHA),target_branch:task?.target_branch??null},
       ...attempt,failureMessage:error?.message??'',secretLiterals:attempt.secretLiterals});
     mkdirSync(output,{recursive:true});
     writeFileSync(resolve(output,'diagnostic.json'),JSON.stringify(diagnostic,null,2));

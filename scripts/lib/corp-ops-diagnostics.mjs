@@ -163,6 +163,20 @@ export function prepareStream(text, maxBytes, literals = []) {
 
 export const OVERFLOW_CODES = new Set(['ENOBUFS', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']);
 
+/**
+ * Accept a value only if it is exactly a 40-character hex commit SHA, normalized to lowercase.
+ * Anything else — missing, empty, short, long, non-hex, a ref name like `HEAD` — is null.
+ *
+ * Failing closed to null matters more than it looks: the alternative is substituting some other
+ * revision that happens to be in scope, which is how a diagnostic ends up asserting an identity it
+ * never actually observed.
+ */
+export function normalizeCommitSha(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^[0-9a-fA-F]{40}$/.test(trimmed) ? trimmed.toLowerCase() : null;
+}
+
 const SIGNATURES = [
   { category: 'CODEX_AUTH_OR_SESSION', re: /\b(401|403|unauthorized|forbidden|not logged in|login required|authentication|auth failed|invalid api key|session (?:expired|invalid)|re-?authenticate)\b/i },
   { category: 'CODEX_QUOTA_OR_RATE_LIMIT', re: /\b(429|rate.?limit|quota|usage limit|too many requests|insufficient (?:credit|quota|balance)|billing)\b/i },
@@ -286,9 +300,17 @@ export function buildDiagnostic({
       run_attempt: run.run_attempt ?? null,
       receiver_id: run.receiver_id ?? null,
     },
+    // Two DIFFERENT facts, deliberately not merged. `base_sha` is the intake's declared execution
+    // base; `workflow_sha` is the revision GitHub actually ran this workflow from. They are often
+    // equal, but that is a coincidence of scheduling, never an invariant.
+    //
+    // Neither is `route_revision`. The canonical attempt-owned route revision is journal-owned Corp
+    // Ops state and is correlated to this artifact by `attempt_id` + `run_id`; deriving a field of
+    // that name from anything observable here would manufacture execution-identity authority the
+    // worker does not hold.
     revision: {
-      route_revision: revision.route_revision ?? null,
-      base_sha: revision.base_sha ?? null,
+      base_sha: normalizeCommitSha(revision.base_sha),
+      workflow_sha: normalizeCommitSha(revision.workflow_sha),
       target_branch: revision.target_branch ?? null,
     },
     process: {
