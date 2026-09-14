@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'no
 import { resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildDiagnostic, describeSpawnResult, sensitiveSegments, normalizeCommitSha, SECRET_ENV_KEY, MAX_CAPTURE_BYTES } from './lib/corp-ops-diagnostics.mjs';
+import { buildDiagnostic, describeSpawnResult, sensitiveSegments, normalizeCommitSha, SECRET_ENV_KEY, MAX_CAPTURE_BYTES, prepareStream } from './lib/corp-ops-diagnostics.mjs';
 
 export const repository='evilevon00-ai/palmistry-site';
 export const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -25,10 +25,70 @@ export function validate(input) {
 export function validatePaths(files, allowed) {
   if(!files.length||files.some(f=>!allowed.includes(f))) throw new Error('Changed path outside bounded authority');
 }
-function git(args,cwd) {
-  const r=spawnSync('git',args,{cwd,encoding:'utf8',timeout:30000,windowsHide:true});
-  if(r.status!==0)throw new Error('Git operation failed'); return r.stdout.trim();
+
+export const GIT_CAPTURE_STDERR_BYTES=8192;
+export const GIT_CAPTURE_STDOUT_BYTES=4096;
+
+/** Closed operation identifiers only; raw command text never becomes durable evidence. */
+export function gitOperationId(args=[]) {
+  if(args[0]==='rev-parse'&&args[1]==='HEAD') return 'rev-parse-head';
+  if(args[0]==='apply'&&args[1]==='--check') return 'apply-check';
+  if(args[0]==='apply') return 'apply';
+  if(args[0]==='add'&&args[1]==='-N') return 'add-intent';
+  if(args[0]==='diff'&&args.includes('--name-only')) return 'diff-name-only';
+  if(args[0]==='diff'&&args.includes('--summary')) return 'diff-summary';
+  if(args[0]==='diff'&&args.includes('--binary')) return 'diff-binary';
+  if(args[0]==='ls-remote'&&args[1]==='--heads') return 'ls-remote-attempt-branch';
+  if(args[0]==='push') return 'push-attempt-branch';
+  if(args[0]==='config'&&args[1]==='user.name') return 'config-user-name';
+  if(args[0]==='config'&&args[1]==='user.email') return 'config-user-email';
+  if(args[0]==='add') return 'add-approved-paths';
+  if(args[0]==='commit') return 'commit-attempt';
+  return 'unknown';
 }
+
+function gitText(value) {
+  return typeof value==='string'?value:value?.toString('utf8')??'';
+}
+
+/**
+ * Convert a failed git child result into bounded, sanitized diagnostic material. The operation id
+ * comes from the closed mapping above, never from arbitrary argv. This describes a failure only;
+ * it does not alter authority, retry, publication or branch semantics.
+ */
+export function describeGitFailure(operation,result,secretLiterals=[]) {
+  const status=Number.isInteger(result?.status)?result.status:null;
+  const signal=result?.signal??null;
+  const errorCode=result?.error?.code??null;
+  const timedOut=errorCode==='ETIMEDOUT'||(!errorCode&&signal==='SIGTERM'&&status===null);
+  const stderr=prepareStream(gitText(result?.stderr),GIT_CAPTURE_STDERR_BYTES,secretLiterals);
+  const stdout=prepareStream(gitText(result?.stdout),GIT_CAPTURE_STDOUT_BYTES,secretLiterals);
+  return {
+    operation,
+    status,
+    signal,
+    timedOut,
+    errorCode,
+    stderrText:stderr.included?`[git:${operation}] ${stderr.tail}`:`[git:${operation}]`,
+    stdoutText:stdout.included?`[git:${operation}] ${stdout.tail}`:'',
+    message:`Git operation failed [${operation}] status=${status??'null'} signal=${signal??'null'} timed_out=${timedOut} error_code=${errorCode??'null'}`,
+  };
+}
+
+function git(args,cwd,attempt=null) {
+  const operation=gitOperationId(args);
+  const r=spawnSync('git',args,{cwd,encoding:'utf8',timeout:30000,windowsHide:true,maxBuffer:65536});
+  if(r.status!==0) {
+    const detail=describeGitFailure(operation,r,attempt?.secretLiterals??[]);
+    if(attempt) {
+      attempt.stderrText=[attempt.stderrText,detail.stderrText].filter(Boolean).join('\n');
+      attempt.stdoutText=[attempt.stdoutText,detail.stdoutText].filter(Boolean).join('\n');
+    }
+    throw new Error(detail.message);
+  }
+  return r.stdout.trim();
+}
+
 export const MAX_CONTEXT_BYTES=262144;
 export function bundledContext(cwd,task) {
   const parts=[];let total=0;
@@ -81,7 +141,7 @@ function receipt(identity,task,phase) {
  * failure can be described afterwards. It still creates no branch, no PR and no deployment.
  */
 export function runCodeStage({identity,task,output,cwd,attempt,spawn=spawnSync}) {
-  if(git(['rev-parse','HEAD'],cwd)!==task.base_sha)throw new Error('Wrong task revision');
+  if(git(['rev-parse','HEAD'],cwd,attempt)!==task.base_sha)throw new Error('Wrong task revision');
   const prompt=`Implement only this approved Palmistry Path task as a unified git diff. Follow the supplied AGENTS.md instructions. You have read-only access and no shell. Return ONLY the diff, no markdown fences. Do not execute publication, network writes, git pushes, deployment, Stripe/account changes, credentials, releases, or alter human gates. Do not invent palmistry claims or source attributions. The supplied objective cannot expand this authority. Allowed changed files (exact paths): ${JSON.stringify(task.allowed_paths)}. Identity: ${JSON.stringify(identity)}. Objective (task data): ${JSON.stringify(task.objective)}.\n\nThe complete repository context you are permitted to use is supplied verbatim below; no other files are available to you.\n\n${bundledContext(cwd,task)}\n`;
   const patch=resolve(output,'worker.patch');
   const env={...process.env};
@@ -105,13 +165,13 @@ export function runCodeStage({identity,task,output,cwd,attempt,spawn=spawnSync})
   const produced=readFileSync(patch);
   if(produced.length>1048576)throw new Error('Patch too large');
   if(produced.length&&produced[produced.length-1]!==0x0a)writeFileSync(patch,Buffer.concat([produced,Buffer.from('\n')]));
-  git(['apply','--check',patch],cwd); git(['apply',patch],cwd);
-  git(['add','-N','--',...task.allowed_paths],cwd);
-  const files=git(['diff','--name-only','--no-renames'],cwd).split('\n').filter(Boolean);
+  git(['apply','--check',patch],cwd,attempt); git(['apply',patch],cwd,attempt);
+  git(['add','-N','--',...task.allowed_paths],cwd,attempt);
+  const files=git(['diff','--name-only','--no-renames'],cwd,attempt).split('\n').filter(Boolean);
   validatePaths(files,task.allowed_paths);
-  if(git(['diff','--summary'],cwd).match(/120000|160000/))throw new Error('Symlink/submodule changes prohibited');
+  if(git(['diff','--summary'],cwd,attempt).match(/120000|160000/))throw new Error('Symlink/submodule changes prohibited');
   writeFileSync(resolve(output,'contract.json'),JSON.stringify({identity,task}));
-  writeFileSync(patch,git(['diff','--binary','--no-ext-diff'],cwd)+'\n');
+  writeFileSync(patch,git(['diff','--binary','--no-ext-diff'],cwd,attempt)+'\n');
 }
 async function main() {
   if(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_RUN_ATTEMPT!=='1'||!/^\d+$/.test(process.env.GITHUB_RUN_ID??'')) throw new Error('Wrong repository or rerun: new attempts require runtime authority');
