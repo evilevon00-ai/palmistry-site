@@ -346,7 +346,11 @@ check('failure/truncates-large-streams', () => {
 });
 
 check('failure/capture-ceiling-is-enforced-by-the-child', () => {
-	// A runaway model must not be able to exhaust runner memory: spawnSync kills it at maxBuffer.
+	// A runaway model must not be able to exhaust runner memory or produce an unbounded artifact.
+	// How the platform SURFACES the maxBuffer kill differs — Windows reports ENOBUFS with a SIGTERM,
+	// Linux may let the child exit cleanly with the stream truncated — so the portable contract is
+	// that the stage fails and the diagnostic stays bounded. The code-to-category mapping is pinned
+	// deterministically below rather than through platform behaviour.
 	const runaway = runStage({
 		FAKE_CODEX_EXIT: '0',
 		FAKE_CODEX_STDOUT: 'Z'.repeat(65536) + '\n',
@@ -354,12 +358,33 @@ check('failure/capture-ceiling-is-enforced-by-the-child', () => {
 	});
 	assert(runaway.error !== null, 'a stream past the capture ceiling must fail the stage');
 	assert(runaway.diagnosticExists, 'a capture-ceiling failure must still leave a diagnostic');
-	assert(
-		runaway.diagnostic.category === 'CODEX_OUTPUT_OVERFLOW',
-		`expected CODEX_OUTPUT_OVERFLOW, got ${runaway.diagnostic.category}`,
-	);
 	const bytes = Buffer.byteLength(runaway.diagnosticRaw, 'utf8');
 	assert(bytes <= MAX_DIAGNOSTIC_BYTES * 2, `overflow diagnostic ${bytes} bytes is not bounded`);
+	for (const stream of Object.values(runaway.diagnostic.streams)) {
+		assert(stream.bytes <= MAX_STDERR_BYTES, `stream tail ${stream.bytes} escaped its ceiling`);
+	}
+	assert(runaway.diagnostic.publication.pr_created === false, 'an overflow failure must publish nothing');
+});
+
+check('failure/overflow-is-not-mistaken-for-a-timeout', () => {
+	// Regression: a maxBuffer kill terminates the child with SIGTERM and a null status, exactly like a
+	// timeout. Reporting it as CODEX_TIMEOUT would send an operator hunting for a slow model when the
+	// real cause was runaway output.
+	for (const code of ['ENOBUFS', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']) {
+		const described = describeSpawnResult(
+			{ error: Object.assign(new Error('spawnSync ' + code), { code }), status: null, signal: 'SIGTERM', stdout: '', stderr: '' },
+			{ timeoutMs: CODEX_TIMEOUT_MS },
+		);
+		assert(described.timedOut === false, `${code} must not be classified as a timeout`);
+		assert(
+			classifyFailure(described) === 'CODEX_OUTPUT_OVERFLOW',
+			`${code} must classify as CODEX_OUTPUT_OVERFLOW, got ${classifyFailure(described)}`,
+		);
+	}
+	// ...and a genuine timeout still classifies as one, on platforms that report only the signal.
+	const signalOnly = describeSpawnResult({ error: null, status: null, signal: 'SIGTERM', stdout: '', stderr: '' }, { timeoutMs: CODEX_TIMEOUT_MS });
+	assert(signalOnly.timedOut === true, 'a signal-only kill under a timeout must still read as a timeout');
+	assert(classifyFailure(signalOnly) === 'CODEX_TIMEOUT', 'a genuine timeout must still classify as CODEX_TIMEOUT');
 });
 
 check('failure/bounded-tail-keeps-the-end', () => {
