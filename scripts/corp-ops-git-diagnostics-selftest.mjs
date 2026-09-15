@@ -107,9 +107,20 @@ check('markdown-fenced-output-still-fails-closed',()=>{
   const fenced=`\`\`\`diff\n${cleanPatch(repo.cwd)}\`\`\`\n`;
   const result=run(fenced,repo);
   assert(result.error,'markdown-fenced output must not be silently accepted');
-  assert(result.diagnostic?.category==='PATCH_APPLY_FAILED',`unexpected fenced-output category ${result.diagnostic?.category}`);
+  assert(result.error.message.includes('Generated patch envelope invalid'),`unexpected fenced-output failure ${result.error.message}`);
+  assert(result.diagnostic,'fenced output must leave durable failure evidence');
+  assert(result.diagnostic.publication.branch_created===false&&result.diagnostic.publication.pr_created===false&&result.diagnostic.publication.deployed===false,'fenced output must remain publication-impossible');
   assert(!existsSync(resolve(result.output,'contract.json')),'fenced output must not produce success contract evidence');
   assert(!existsSync(resolve(repo.cwd,'.git','refs','heads','corp-ops')),'fenced output must not create an attempt branch');
+});
+
+check('leading-prose-output-still-fails-closed',()=>{
+  const repo=makeRepo();
+  const wrapped=`Here is the requested patch:\n${cleanPatch(repo.cwd)}`;
+  const result=run(wrapped,repo);
+  assert(result.error,'leading prose must not be silently accepted');
+  assert(result.error.message.includes('Generated patch envelope invalid'),`unexpected leading-prose failure ${result.error.message}`);
+  assert(!existsSync(resolve(result.output,'contract.json')),'leading prose must not produce success contract evidence');
 });
 
 check('truncated-output-still-fails-closed',()=>{
