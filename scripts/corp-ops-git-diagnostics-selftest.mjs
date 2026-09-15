@@ -70,6 +70,8 @@ function run(fakePatch,{cwd,baseSha}){
 
 check('closed-operation-ids',()=>{
   assert(gitOperationId(['apply','--check','worker.patch'])==='apply-check','apply --check must normalize to apply-check');
+  assert(gitOperationId(['apply','--check','--recount','worker.patch'])==='apply-check','apply --check --recount must retain the apply-check diagnostic id');
+  assert(gitOperationId(['apply','--recount','worker.patch'])==='apply','apply --recount must retain the apply diagnostic id');
   assert(gitOperationId(['apply','worker.patch'])==='apply','apply must normalize to apply');
   assert(gitOperationId(['rm','--force','anything'])==='unknown','unrecognized argv must not become durable command text');
 });
@@ -89,6 +91,38 @@ check('clean-patch-still-applies',()=>{
   assert(result.error===null,`clean patch failed: ${result.error?.message}`);
   assert(readFileSync(resolve(repo.cwd,'docs/note.md'),'utf8')==='two\n','clean patch did not apply');
   assert(existsSync(resolve(result.output,'contract.json')),'clean patch must still produce contract evidence');
+});
+
+check('model-hunk-count-drift-is-recounted-deterministically',()=>{
+  const repo=makeRepo();
+  const drifted=cleanPatch(repo.cwd).replace('@@ -1 +1 @@','@@ -1,99 +1,99 @@');
+  const result=run(drifted,repo);
+  assert(result.error===null,`recountable model patch failed: ${result.error?.message}`);
+  assert(readFileSync(resolve(repo.cwd,'docs/note.md'),'utf8')==='two\n','recountable patch did not apply the intended edit');
+  assert(existsSync(resolve(result.output,'contract.json')),'recountable patch must produce normal success evidence');
+});
+
+check('markdown-fenced-output-still-fails-closed',()=>{
+  const repo=makeRepo();
+  const fenced=`\`\`\`diff\n${cleanPatch(repo.cwd)}\`\`\`\n`;
+  const result=run(fenced,repo);
+  assert(result.error,'markdown-fenced output must not be silently accepted');
+  assert(result.diagnostic?.category==='PATCH_APPLY_FAILED',`unexpected fenced-output category ${result.diagnostic?.category}`);
+  assert(!existsSync(resolve(result.output,'contract.json')),'fenced output must not produce success contract evidence');
+  assert(!existsSync(resolve(repo.cwd,'.git','refs','heads','corp-ops')),'fenced output must not create an attempt branch');
+});
+
+check('truncated-output-still-fails-closed',()=>{
+  const repo=makeRepo();
+  const truncated=[
+    'diff --git a/docs/note.md b/docs/note.md',
+    '--- a/docs/note.md',
+  ].join('\n')+'\n';
+  const result=run(truncated,repo);
+  assert(result.error,'truncated output must fail');
+  assert(result.diagnostic?.category==='PATCH_APPLY_FAILED',`unexpected truncated-output category ${result.diagnostic?.category}`);
+  assert(!existsSync(resolve(result.output,'contract.json')),'truncated output must not produce success contract evidence');
+  assert(!existsSync(resolve(repo.cwd,'.git','refs','heads','corp-ops')),'truncated output must not create an attempt branch');
 });
 
 check('context-mismatch-identifies-apply-check-and-fails-closed',()=>{
