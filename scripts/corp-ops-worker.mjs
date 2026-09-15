@@ -89,6 +89,15 @@ function git(args,cwd,attempt=null) {
   return r.stdout.trim();
 }
 
+/**
+ * Git intentionally tolerates non-patch garbage before/after a diff. Model output does not get that
+ * privilege: the durable worker contract requires a raw diff, never prose or Markdown fencing.
+ */
+export function validateGeneratedPatchEnvelope(produced) {
+  const text=Buffer.isBuffer(produced)?produced.toString('utf8'):String(produced??'');
+  if(!text.startsWith('diff --git ')||/(?:^|\n)```/.test(text)||text.includes('\x00')) throw new Error('Generated patch envelope invalid');
+}
+
 export const MAX_CONTEXT_BYTES=262144;
 export function bundledContext(cwd,task) {
   const parts=[];let total=0;
@@ -164,8 +173,13 @@ export function runCodeStage({identity,task,output,cwd,attempt,spawn=spawnSync})
   if(result.status!==0)throw new Error('Worker failed; no publication permitted');
   const produced=readFileSync(patch);
   if(produced.length>1048576)throw new Error('Patch too large');
+  validateGeneratedPatchEnvelope(produced);
   if(produced.length&&produced[produced.length-1]!==0x0a)writeFileSync(patch,Buffer.concat([produced,Buffer.from('\n')]));
-  git(['apply','--check',patch],cwd,attempt); git(['apply',patch],cwd,attempt);
+  // Codex emits unified diffs as model text. Hunk line-count metadata can be internally inconsistent
+  // even when the actual hunk body is complete. Let git deterministically recount those counts while
+  // preserving all existing context/path/tree validation. Truly malformed/truncated/non-diff output
+  // still fails closed at apply-check and can never reach publication.
+  git(['apply','--check','--recount',patch],cwd,attempt); git(['apply','--recount',patch],cwd,attempt);
   git(['add','-N','--',...task.allowed_paths],cwd,attempt);
   const files=git(['diff','--name-only','--no-renames'],cwd,attempt).split('\n').filter(Boolean);
   validatePaths(files,task.allowed_paths);
