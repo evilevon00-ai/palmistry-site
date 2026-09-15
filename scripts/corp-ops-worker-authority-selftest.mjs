@@ -22,7 +22,7 @@ function initRepo(){
   git(['add','.'],cwd);git(['commit','--quiet','-m','base'],cwd);
   return {cwd,baseSha:git(['rev-parse','HEAD'],cwd)};
 }
-const identity={mission_id:'authority-selftest',work_item_id:'authority-selftest-001',attempt_id:'11111111-2222-3333-4444-555555555555',ownership_generation:1,branch:'corp-ops/attempt/11111111-2222-3333-4444-555555555555'};
+const identity={mission_id:'authority-selftest',work_item_id:'authority-selftest-001',attempt_id:'11111111-2222-3333-4444-555555555555',branch:'corp-ops/attempt/11111111-2222-3333-4444-555555555555',ownership_generation:1};
 function envelope(task){return {...identity,identity_hash:hash(identity),task_json:JSON.stringify(task)};}
 function task(baseSha,extra={}){return {objective:'Bounded authority self-test.',target_branch:'main',base_sha:baseSha,allowed_paths:['docs/note.md','src/assets/store/emblem-journal.svg','src/assets/store/unused.svg'],...extra};}
 
