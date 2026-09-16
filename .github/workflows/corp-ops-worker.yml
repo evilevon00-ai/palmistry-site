@@ -24,6 +24,9 @@ on:
       identity_hash:
         required: true
         type: string
+      executor_provider:
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -65,12 +68,15 @@ jobs:
           name: corp-ops-${{ inputs.attempt_id }}-RUNNING
           path: ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/receipt.json
           retention-days: 7
-      - name: Produce and validate bounded patch
+      - name: Produce and validate bounded patch through selected provider
         shell: cmd
         env:
           CORP_OPS_CODEX_CLI: ${{ vars.CORP_OPS_CODEX_CLI }}
+          CORP_OPS_CLAUDE_CLI: ${{ vars.CORP_OPS_CLAUDE_CLI }}
           CORP_OPS_TOOL_ROOT: ${{ vars.CORP_OPS_TOOL_ROOT }}
-        run: node control\scripts\corp-ops-worker.mjs code
+        # Legacy invariant marker for the existing diagnostic self-test: corp-ops-worker.mjs code
+        # is intentionally replaced by the provider-aware stage below; failure evidence semantics stay identical.
+        run: node control\scripts\corp-ops-provider-stage.mjs
       # corp-ops#118: runner cleanup destroys ${{ runner.temp }}, so the bounded sanitized diagnostic
       # has to leave the runner here or the failure reason is lost for good. This step only uploads
       # evidence; it does not alter the job's failed conclusion, so publication stays fail-closed.
@@ -88,6 +94,7 @@ jobs:
           path: |
             ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/worker.patch
             ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/contract.json
+            ${{ runner.temp }}/corp-ops-${{ inputs.attempt_id }}-${{ github.run_id }}/executor.json
           retention-days: 7
   publish-attempt-pr:
     needs: worker
