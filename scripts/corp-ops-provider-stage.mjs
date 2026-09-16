@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   repository, hash, validate, bundledContext, collectChangedFiles, validateGeneratedPatchEnvelope,
@@ -110,7 +111,7 @@ async function main() {
   runProviderCodeStage({ identity, task, provider, output, cwd: resolve('task') });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(() => {
     console.error('BOUNDED_WORKER_FAILED: inspect exact run/branch/PR and the corp-ops diagnostic artifact; do not blindly rerun.');
     process.exitCode = 1;
