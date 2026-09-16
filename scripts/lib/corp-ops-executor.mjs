@@ -49,12 +49,15 @@ export function executorSpec(providerValue, { env = process.env, patch } = {}) {
   };
 }
 
-export function runBoundedExecutor({ provider, prompt, patch, cwd, env, spawn, timeoutMs = EXECUTOR_TIMEOUT_MS }) {
+export function runBoundedExecutor({
+  provider, prompt, patch, cwd, configEnv = process.env, childEnv = process.env,
+  spawn, timeoutMs = EXECUTOR_TIMEOUT_MS,
+}) {
   if (typeof spawn !== 'function') throw new Error('Executor spawn function required');
-  const spec = executorSpec(provider, { env, patch });
+  const spec = executorSpec(provider, { env: configEnv, patch });
   const result = spawn(spec.cli, spec.args, {
     cwd,
-    env,
+    env: childEnv,
     input: prompt,
     encoding: 'utf8',
     timeout: timeoutMs,
