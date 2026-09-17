@@ -2,7 +2,9 @@
 import BaseHead from '../../components/BaseHead.astro';
 import Footer from '../../components/Footer.astro';
 import Header from '../../components/Header.astro';
+import ProductCard from '../../components/ProductCard.astro';
 import { SITE_TITLE } from '../../consts';
+import { products } from '../../products';
 ---
 
 <!doctype html>
@@ -10,7 +12,7 @@ import { SITE_TITLE } from '../../consts';
 	<head>
 		<BaseHead
 			title={`Your Guide Is on Its Way — ${SITE_TITLE}`}
-			description="Your Palmistry Starter Guide is on its way. Here's what to do while you wait — start with Lesson 1 or explore key beginner articles."
+			description="Your Quick Start Guide is on its way. Start with Lesson 1, explore beginner articles, or browse the Palmistry Path store."
 			robots="noindex, follow"
 		/>
 		<style>
@@ -188,6 +190,10 @@ import { SITE_TITLE } from '../../consts';
 			}
 
 			/* ── Upsell block ─────────────────────────────────────────── */
+			.product-next-steps {
+				display: grid;
+				gap: 1.25em;
+			}
 			.upsell-block {
 				text-align: center;
 				border: 1px solid rgba(201, 169, 110, 0.22);
@@ -267,11 +273,11 @@ import { SITE_TITLE } from '../../consts';
 			<section class="thankyou-hero">
 				<div class="hero-art" aria-hidden="true"><img src="/images/home/hero-palm-map.webp" alt="" width="640" height="640" loading="eager" decoding="async" /></div>
 				<img class="hero-cover reveal reveal--scale" src="/images/guide/quick-start-cover.webp" alt="" width="132" height="176" loading="eager" decoding="async" />
-				<p class="thankyou-eyebrow reveal" style="--reveal-delay: 120ms">Palmistry Starter Guide</p>
+				<p class="thankyou-eyebrow reveal" style="--reveal-delay: 120ms">Palmistry Quick Start Guide</p>
 				<h1 class="display reveal" style="--reveal-delay: 220ms">Your guide is on its way.</h1>
 				<p class="subline reveal" style="--reveal-delay: 320ms">
-					Check your inbox shortly — the Palmistry Starter Guide should arrive in the next few
-					minutes. While you wait:
+					Check your inbox and spam folder for the guide. The email and PDF may still use the
+					Starter Guide name. While you wait:
 				</p>
 			</section>
 
@@ -323,21 +329,16 @@ import { SITE_TITLE } from '../../consts';
 
 			<div class="guide-section">
 				<div class="upsell-block">
-					<p class="upsell-eyebrow">For serious students</p>
-					<h2>The Complete Palmistry Reference</h2>
+					<p class="upsell-eyebrow">An optional next step</p>
+					<h2>Continue your study</h2>
 					<p class="upsell-desc">
-						The Starter Guide covers the basics. The Complete Reference adds every significant line
-						variation, all seven mounts in full detail, minor lines, markings, fingers, and
-						cross-tradition comparison tables — in one printable PDF.
+						Your guide is free. Explore the Journal, Handbook, and Bundle whenever you're ready,
+						or continue with the free lessons above.
 					</p>
-					<a
-						href="/premium-guide/"
-						class="btn-upsell"
-						data-track="cta"
-						data-track-location="thankyou-upsell"
-						data-track-target="premium-guide"
-					>Join the Complete Reference waitlist →</a>
-					<span class="upsell-price">Waitlist-only while the printable reference is in preparation</span>
+					<div class="product-next-steps">
+						{products.map((product) => <ProductCard product={product} location="thankyou-products" />)}
+					</div>
+					<p><a href="/store/">Visit the store</a></p>
 				</div>
 			</div>
 

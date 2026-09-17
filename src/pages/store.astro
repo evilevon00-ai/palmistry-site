@@ -1,0 +1,49 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import ProductCard from '../components/ProductCard.astro';
+import { SITE_TITLE } from '../consts';
+import { products } from '../products';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead
+			title={`Store — ${SITE_TITLE}`}
+			description="Explore the Palmistry Path Journal, Handbook, and Bundle, or begin with the free Quick Start Guide."
+		/>
+		<style>
+			main {
+				box-sizing: border-box;
+				width: var(--wide);
+				max-width: 100%;
+				margin: 0 auto;
+				padding: 3em 1em;
+			}
+			.store-intro { text-align: center; margin-bottom: 2em; }
+			.products { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25em; }
+			.guide-link { text-align: center; margin-top: 2em; }
+			@media (max-width: 860px) {
+				.products { grid-template-columns: 1fr; }
+			}
+		</style>
+	</head>
+	<body>
+		<Header />
+		<main id="main-content" tabindex="-1">
+			<div class="store-intro">
+				<p class="eyebrow">Palmistry Path</p>
+				<h1 class="display">Store</h1>
+				<p>Choose a companion for your study of palmistry.</p>
+				<p>Our materials are educational; we do not use palmistry to predict life outcomes.</p>
+			</div>
+			<div class="products">
+				{products.map((product) => <ProductCard product={product} location="store" />)}
+			</div>
+			<p class="guide-link">Getting started? <a href="/guide/">Get the free Quick Start Guide</a>.</p>
+		</main>
+		<Footer />
+	</body>
+</html>

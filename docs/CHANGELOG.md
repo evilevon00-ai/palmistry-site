@@ -1,5 +1,11 @@
 # Changelog - Palmistry Path
 
+## 2026-09-17 — Issue #121 storefront funnel (proposed diff; not deployed)
+
+- Added a centralized three-offer catalog, reusable product cards, store navigation/page, and static order return/help pages that do not confirm payment or expose purchased files.
+- Presented the existing free guide as the Quick Start Guide, preserved Kit and direct download behavior, and replaced the thank-you waitlist promotion with catalog-driven product next steps.
+- Documented future private fulfillment, environment placeholder names, redirect configuration, and release checks in `STOREFRONT_AND_FULFILLMENT.md`. Approved SVG source bytes were absent, so emblem copying remains blocked; build, audits, Git state, and generated indexability remain unverified in this no-shell diff-only task. No publication or account changes performed.
+
 ## 2026-09-08 — Issue #122 visual reconciliation (review branch)
 
 - Forward-ported the approved Fable homepage, whole-hand mobile composition, brand mark, shared visual components, guide presentation, and instructional atlas onto current main.

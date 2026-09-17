@@ -17,6 +17,7 @@ import HeaderLink from './HeaderLink.astro';
 			<HeaderLink href="/" data-track="nav" data-track-location="header" data-track-target="home">Home</HeaderLink>
 			<HeaderLink href="/blog" data-track="nav" data-track-location="header" data-track-target="blog">Blog</HeaderLink>
 			<HeaderLink href="/learn" data-track="nav" data-track-location="header" data-track-target="learn">Learn</HeaderLink>
+			<HeaderLink href="/store" data-track="nav" data-track-location="header" data-track-target="store">Store</HeaderLink>
 			<HeaderLink href="/about" data-track="nav" data-track-location="header" data-track-target="about">About</HeaderLink>
 			<HeaderLink href="/glossary" data-track="nav" data-track-location="header" data-track-target="glossary">Glossary</HeaderLink>
 			<HeaderLink href="/search" aria-label="Search" data-track="nav" data-track-location="header" data-track-target="search">
@@ -80,6 +81,12 @@ import HeaderLink from './HeaderLink.astro';
 		max-width: var(--wide);
 		margin: 0 auto;
 	}
+	.internal-links {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		min-width: 0;
+	}
 	nav a {
 		display: inline-flex;
 		align-items: center;
@@ -103,6 +110,13 @@ import HeaderLink from './HeaderLink.astro';
 	}
 	nav a:hover {
 		color: var(--color-nav-hover);
+	}
+
+	@media (max-width: 1000px) {
+		nav {
+			flex-direction: column;
+			align-items: center;
+		}
 	}
 
 	@media (max-width: 720px) {
