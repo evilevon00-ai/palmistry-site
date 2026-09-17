@@ -1,0 +1,34 @@
+---
+import BaseHead from '../../components/BaseHead.astro';
+import Footer from '../../components/Footer.astro';
+import Header from '../../components/Header.astro';
+import { SITE_TITLE } from '../../consts';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead
+			title={`Checkout Help — ${SITE_TITLE}`}
+			description="Help when Palmistry Path checkout does not finish as expected."
+			robots="noindex, follow"
+		/>
+		<style>
+			main { box-sizing: border-box; width: var(--measure); max-width: 100%; margin: 0 auto; padding: 3em 1em; }
+			.order-note { padding: 1.5em; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--color-bg-elev); }
+		</style>
+	</head>
+	<body>
+		<Header />
+		<main id="main-content" tabindex="-1" data-pagefind-ignore>
+			<p class="eyebrow">Checkout help</p>
+			<h1 class="display">Checkout didn't go as expected?</h1>
+			<div class="order-note">
+				<p>This page cannot determine whether you were charged. Check your receipt and payment status before trying again.</p>
+				<p>If payment completed but delivery instructions are missing, use the seller contact information shown in checkout or on your receipt.</p>
+			</div>
+			<p><a href="/store/">Return to the store</a> · <a href="/guide/">Get the free Quick Start Guide</a></p>
+		</main>
+		<Footer />
+	</body>
+</html>

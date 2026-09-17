@@ -1,0 +1,58 @@
+---
+import { formatPrice, type Product } from '../products';
+
+interface Props {
+	product: Product;
+	location: string;
+}
+
+const { product, location } = Astro.props;
+---
+
+<article class="product-card">
+	<p class="eyebrow">Palmistry Path</p>
+	<h2>{product.name}</h2>
+	<p class="product-price">{formatPrice(product)}</p>
+	<a
+		class="btn-primary"
+		href={product.checkoutUrl}
+		data-track="cta"
+		data-track-location={location}
+		data-track-target={product.id}
+	>{product.cta} — {formatPrice(product)}</a>
+	<p class="checkout-note">Continue to Stripe checkout.</p>
+</article>
+
+<style>
+	.product-card {
+		box-sizing: border-box;
+		min-width: 0;
+		padding: clamp(1.25em, 3vw, 2em);
+		border: 1px solid var(--hairline-strong);
+		border-radius: 6px;
+		background:
+			radial-gradient(ellipse at top, rgba(122, 72, 201, 0.16), transparent 75%),
+			var(--color-bg-elev);
+		text-align: center;
+	}
+	h2 {
+		margin: 0.5em 0;
+		color: var(--accent-light);
+		font-size: clamp(1.2rem, 3vw, 1.6rem);
+	}
+	.product-price {
+		color: var(--accent);
+		font-size: 1.25em;
+	}
+	a {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		white-space: normal;
+	}
+	.checkout-note {
+		color: var(--color-text-muted);
+		font-size: 0.78em;
+	}
+</style>
